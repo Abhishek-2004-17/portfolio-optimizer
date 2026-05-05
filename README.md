@@ -72,32 +72,52 @@ You can set up PostgreSQL either with Docker or a local install.
 
 #### Option A: Docker (recommended)
 
+**Step 1: Start a PostgreSQL container**
+
 ```bash
 docker run -d \
   --name portfolio-db \
-  -e POSTGRES_USER=portfolio \
-  -e POSTGRES_PASSWORD=portfolio \
-  -e POSTGRES_DB=portfolio_db \
+  -e POSTGRES_PASSWORD=postgres \
   -p 5432:5432 \
   postgres:16
 ```
 
-This creates a PostgreSQL 16 container with:
-- **User:** `portfolio`
-- **Password:** `portfolio`
-- **Database:** `portfolio_db`
+This starts a PostgreSQL 16 container with:
+- **Default superuser:** `postgres`
+- **Password:** `postgres`
 - **Port:** `5432`
 
-To stop/restart the container later:
+**Step 2: Create the database and user**
 
 ```bash
-docker stop portfolio-db
-docker start portfolio-db
+docker exec -it portfolio-db psql -U postgres -c \
+  "CREATE USER portfolio WITH PASSWORD 'portfolio';"
+
+docker exec -it portfolio-db psql -U postgres -c \
+  "CREATE DATABASE portfolio_db OWNER portfolio;"
 ```
 
-To remove the container entirely:
+**Step 3: Verify the database was created**
 
 ```bash
+docker exec -it portfolio-db psql -U postgres -c "\l"
+```
+
+You should see `portfolio_db` in the list.
+
+**Useful commands:**
+
+```bash
+# Connect to the database interactively
+docker exec -it portfolio-db psql -U portfolio -d portfolio_db
+
+# Stop the container
+docker stop portfolio-db
+
+# Start it again later
+docker start portfolio-db
+
+# Remove the container entirely (deletes all data)
 docker rm -f portfolio-db
 ```
 
