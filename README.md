@@ -156,11 +156,42 @@ RISK_FREE_RATE=0.04
 
 ### 4. Create database tables
 
-Alembic handles all table creation. The initial migration creates the full schema:
+Alembic handles all table creation. The initial migration creates the full schema.
+
+**Option A: Run Alembic via Docker (no local Python needed)**
+
+Mount the backend directory into a Python container and run the migration:
+
+```bash
+docker run -it --rm \
+  --network host \
+  -v $(pwd)/backend:/app \
+  -w /app \
+  python:3.13-slim \
+  bash -c "pip install -r requirements.txt && alembic upgrade head"
+```
+
+**Option B: Run Alembic locally**
 
 ```bash
 cd backend
 alembic upgrade head
+```
+
+**Verify the tables were created:**
+
+```bash
+docker exec -it portfolio-db psql -U portfolio -d portfolio_db -c "\dt"
+```
+
+You should see all 5 tables listed. You can also inspect individual tables:
+
+```bash
+docker exec -it portfolio-db psql -U portfolio -d portfolio_db -c "\d portfolios"
+docker exec -it portfolio-db psql -U portfolio -d portfolio_db -c "\d portfolio_assets"
+docker exec -it portfolio-db psql -U portfolio -d portfolio_db -c "\d price_history"
+docker exec -it portfolio-db psql -U portfolio -d portfolio_db -c "\d optimization_results"
+docker exec -it portfolio-db psql -U portfolio -d portfolio_db -c "\d risk_metrics"
 ```
 
 This creates the following tables and columns:
