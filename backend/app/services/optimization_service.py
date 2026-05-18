@@ -18,14 +18,17 @@ class OptimizationService:
         sigma: pd.DataFrame,
         weight_bounds: tuple[float, float] = (0.0, 1.0),
         gamma: float = 0.1,
+        add_l2_reg: bool = True,
     ) -> EfficientFrontier:
         try:
             ef = EfficientFrontier(mu, sigma, weight_bounds=weight_bounds)
-            ef.add_objective(objective_functions.L2_reg, gamma=gamma)
+            if add_l2_reg:
+                ef.add_objective(objective_functions.L2_reg, gamma=gamma)
             return ef
         except Exception:
             ef = EfficientFrontier(mu, sigma, weight_bounds=(0.0, 1.0))
-            ef.add_objective(objective_functions.L2_reg, gamma=gamma * 0.5)
+            if add_l2_reg:
+                ef.add_objective(objective_functions.L2_reg, gamma=gamma * 0.5)
             return ef
 
     @staticmethod
@@ -76,9 +79,9 @@ class OptimizationService:
         prices = OptimizationService._download_prices(tickers, start_date, end_date)
         mu, sigma = OptimizationService._compute_mu_sigma(prices)
 
-        ef = OptimizationService._make_ef(mu, sigma, weight_bounds)
+        ef = OptimizationService._make_ef(mu, sigma, weight_bounds, add_l2_reg=False)
         ef.max_sharpe(risk_free_rate=risk_free_rate)
-        clean_weights = ef.clean_weights()
+        clean_weights = ef.clean_weights(cutoff=1e-6)
         performance = ef.portfolio_performance(risk_free_rate=risk_free_rate)
 
         discrete_allocation = None
@@ -116,7 +119,7 @@ class OptimizationService:
 
         ef = OptimizationService._make_ef(mu, sigma, weight_bounds)
         ef.min_volatility()
-        clean_weights = ef.clean_weights()
+        clean_weights = ef.clean_weights(cutoff=1e-6)
         performance = ef.portfolio_performance()
 
         return {
@@ -143,7 +146,7 @@ class OptimizationService:
 
         ef = OptimizationService._make_ef(mu, sigma, weight_bounds)
         ef.efficient_return(target_return=target_return)
-        clean_weights = ef.clean_weights()
+        clean_weights = ef.clean_weights(cutoff=1e-6)
         performance = ef.portfolio_performance(risk_free_rate=risk_free_rate)
 
         return {
@@ -170,7 +173,7 @@ class OptimizationService:
 
         ef = OptimizationService._make_ef(mu, sigma, weight_bounds)
         ef.efficient_risk(target_volatility=target_volatility)
-        clean_weights = ef.clean_weights()
+        clean_weights = ef.clean_weights(cutoff=1e-6)
         performance = ef.portfolio_performance(risk_free_rate=risk_free_rate)
 
         return {
@@ -191,10 +194,14 @@ class OptimizationService:
         risk_free_rate: float = 0.04,
         weight_bounds: tuple[float, float] = (0.0, 1.0),
         n_points: int = 50,
+        total_portfolio_value: float | None = None,
     ) -> dict:
         prices = OptimizationService._download_prices(tickers, start_date, end_date)
         available_tickers = list(prices.columns)
         mu, sigma = OptimizationService._compute_mu_sigma(prices)
+
+        # Get latest prices for discrete allocation
+        latest_prices = prices.iloc[-1]
 
         # Compute min-volatility portfolio
         ef_min = OptimizationService._make_ef(mu, sigma, weight_bounds)
@@ -203,7 +210,7 @@ class OptimizationService:
         except Exception:
             ef_min = EfficientFrontier(mu, sigma, weight_bounds=(0.0, 1.0))
             ef_min.min_volatility()
-        min_vol_weights = ef_min.clean_weights()
+        min_vol_weights = ef_min.clean_weights(cutoff=1e-6)
         min_vol_perf = ef_min.portfolio_performance(risk_free_rate=risk_free_rate)
         min_vol_point = {
             "volatility": float(min_vol_perf[1]),
@@ -213,13 +220,13 @@ class OptimizationService:
         }
 
         # Compute max-Sharpe portfolio
-        ef_max = OptimizationService._make_ef(mu, sigma, weight_bounds)
+        ef_max = OptimizationService._make_ef(mu, sigma, weight_bounds, add_l2_reg=False)
         try:
             ef_max.max_sharpe(risk_free_rate=risk_free_rate)
         except Exception:
             ef_max = EfficientFrontier(mu, sigma, weight_bounds=(0.0, 1.0))
             ef_max.max_sharpe(risk_free_rate=risk_free_rate)
-        max_sharpe_weights = ef_max.clean_weights()
+        max_sharpe_weights = ef_max.clean_weights(cutoff=1e-6)
         max_sharpe_perf = ef_max.portfolio_performance(risk_free_rate=risk_free_rate)
         max_sharpe_point = {
             "volatility": float(max_sharpe_perf[1]),
@@ -239,7 +246,7 @@ class OptimizationService:
             ef = OptimizationService._make_ef(mu, sigma, weight_bounds)
             try:
                 ef.efficient_risk(target_volatility=tv)
-                weights = ef.clean_weights()
+                weights = ef.clean_weights(cutoff=1e-6)
                 perf = ef.portfolio_performance(risk_free_rate=risk_free_rate)
                 frontier_points.append(
                     {
@@ -270,4 +277,5 @@ class OptimizationService:
             "max_sharpe": max_sharpe_point,
             "min_vol": min_vol_point,
             "asset_points": asset_points,
+            "latest_prices": {k: float(v) for k, v in latest_prices.items()},
         }
