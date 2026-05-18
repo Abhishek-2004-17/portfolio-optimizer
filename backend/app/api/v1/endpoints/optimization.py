@@ -120,6 +120,7 @@ def efficient_frontier(body: FrontierRequest, db: Session = Depends(get_db)):
             risk_free_rate=body.risk_free_rate,
             weight_bounds=body.weight_bounds,
             n_points=body.n_points,
+            total_portfolio_value=body.total_portfolio_value,
         )
     except OptimizationError as e:
         raise HTTPException(

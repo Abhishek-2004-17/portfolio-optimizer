@@ -37,6 +37,7 @@ class FrontierRequest(BaseModel):
     risk_free_rate: float = 0.04
     weight_bounds: tuple[float, float] = (0.0, 1.0)
     n_points: int = Field(50, ge=10, le=200)
+    total_portfolio_value: float | None = None
 
 
 class OptimizeResponse(BaseModel):
@@ -67,3 +68,4 @@ class FrontierResponse(BaseModel):
     max_sharpe: FrontierPoint
     min_vol: FrontierPoint
     asset_points: list[AssetPoint]
+    latest_prices: dict[str, float] | None = None

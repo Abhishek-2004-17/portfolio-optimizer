@@ -12,6 +12,7 @@ import { WeightsBarChart } from '@/components/charts/WeightsBarChart';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorPanel } from '@/components/ui/ErrorPanel';
 import { StatCard } from '@/components/ui/StatCard';
+import { TickerInput } from '@/components/ui/TickerInput';
 import { formatPercent, formatNumber } from '@/utils/format';
 import { getEfficientFrontier } from '@/api/optimizationApi';
 import { createPortfolio, addAsset } from '@/api/portfolioApi';
@@ -19,7 +20,7 @@ import { usePortfolioStore } from '@/store/portfolioStore';
 import type { FrontierResponse, FrontierPoint } from '@/types/optimization';
 
 const schema = z.object({
-  tickers: z.array(z.object({ value: z.string().min(1, 'Ticker required') })).min(2, 'At least 2 tickers'),
+  tickers: z.array(z.object({ value: z.string().min(1, 'Ticker required') })).min(1, 'At least 1 ticker').max(50, 'Maximum 50 tickers'),
   start_date: z.string().min(1),
   end_date: z.string().min(1),
   risk_free_rate: z.number().min(0).max(1),
@@ -79,6 +80,8 @@ export function BuilderPage() {
     register,
     control,
     handleSubmit,
+    setValue,
+    getValues,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -102,6 +105,7 @@ export function BuilderPage() {
         end_date: data.end_date,
         risk_free_rate: data.risk_free_rate,
         weight_bounds: [data.weight_bounds_min, data.weight_bounds_max],
+        total_portfolio_value: saveCapital,
       }),
     onSuccess: (data) => {
       setFrontier(data);
@@ -139,6 +143,39 @@ export function BuilderPage() {
   const currentOpt = sliderPoint ?? (frontier ? frontier.max_sharpe : null);
   const displayWeights = currentOpt?.weights ?? {};
 
+  // Calculate discrete allocation (shares to buy) from weights and prices
+  const discreteAllocation = useMemo(() => {
+    if (!currentOpt?.weights || !frontier?.latest_prices || saveCapital <= 0) {
+      return null;
+    }
+    const prices = frontier.latest_prices;
+    const weights = currentOpt.weights;
+    const allocation: Record<string, { shares: number; amount: number; price: number }> = {};
+    let totalInvested = 0;
+
+    for (const [ticker, weight] of Object.entries(weights)) {
+      if (weight > 0.001 && prices[ticker]) {
+        const targetAmount = saveCapital * weight;
+        const shares = Math.floor(targetAmount / prices[ticker]);
+        const amount = shares * prices[ticker];
+        if (shares > 0) {
+          allocation[ticker] = {
+            shares,
+            amount,
+            price: prices[ticker],
+          };
+          totalInvested += amount;
+        }
+      }
+    }
+
+    return {
+      allocation,
+      totalInvested,
+      leftoverCash: saveCapital - totalInvested,
+    };
+  }, [currentOpt, frontier, saveCapital]);
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold">Build Portfolio</h2>
@@ -149,33 +186,44 @@ export function BuilderPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {/* Tickers */}
             <div className="bg-panel rounded-xl p-4 space-y-3">
-              <label className="text-sm font-medium text-muted block">Tickers</label>
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-muted block">Tickers</label>
+                <span className="text-xs text-muted">{fields.length} / 50</span>
+              </div>
               {fields.map((field, index) => (
                 <div key={field.id} className="flex gap-2">
-                  <input
-                    {...register(`tickers.${index}.value`)}
-                    className="flex-1 bg-panel-light border border-panel-light rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500"
-                    placeholder="e.g. AAPL"
+                  <TickerInput
+                    value={field.value}
+                    onChange={(val) => {
+                      // Update the form value
+                      const tickers = getValues().tickers;
+                      const updated = [...tickers];
+                      updated[index] = { value: val };
+                      setValue('tickers', updated);
+                    }}
                   />
-                  {fields.length > 2 && (
-                    <button
-                      type="button"
-                      onClick={() => remove(index)}
-                      className="text-muted hover:text-bear transition-colors"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => remove(index)}
+                    className="text-muted hover:text-bear transition-colors mt-1"
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               ))}
-              <button
-                type="button"
-                onClick={() => append({ value: '' })}
-                className="flex items-center gap-1 text-brand-500 text-sm hover:underline"
-              >
-                <Plus size={14} /> Add ticker
-              </button>
+              {fields.length < 50 && (
+                <button
+                  type="button"
+                  onClick={() => append({ value: '' })}
+                  className="flex items-center gap-1 text-brand-500 text-sm hover:underline"
+                >
+                  <Plus size={14} /> Add ticker
+                </button>
+              )}
               {errors.tickers && <p className="text-bear text-xs">{errors.tickers.message}</p>}
+              <p className="text-xs text-muted">
+                Search from 100+ popular stocks, ETFs, or enter any ticker manually
+              </p>
             </div>
 
             {/* Date range */}
@@ -204,13 +252,24 @@ export function BuilderPage() {
             {/* Parameters */}
             <div className="bg-panel rounded-xl p-4 space-y-3">
               <label className="text-sm font-medium text-muted block">Parameters</label>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-muted">Risk-free rate</label>
                   <input
                     type="number"
                     step="0.01"
                     {...register('risk_free_rate', { valueAsNumber: true })}
+                    className="w-full bg-panel-light border border-panel-light rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted">Capital ($)</label>
+                  <input
+                    type="number"
+                    step="1000"
+                    min="1000"
+                    value={saveCapital}
+                    onChange={(e) => setSaveCapital(Number(e.target.value))}
                     className="w-full bg-panel-light border border-panel-light rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500"
                   />
                 </div>
@@ -284,14 +343,8 @@ export function BuilderPage() {
                   className="w-full bg-panel-light border border-panel-light rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500"
                 />
               </div>
-              <div>
-                <label className="text-xs text-muted block mb-1">Capital ($)</label>
-                <input
-                  type="number"
-                  value={saveCapital}
-                  onChange={(e) => setSaveCapital(Number(e.target.value))}
-                  className="w-full bg-panel-light border border-panel-light rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500"
-                />
+              <div className="text-xs text-muted">
+                Saving with capital: ${saveCapital.toLocaleString()}
               </div>
               <button
                 onClick={() => {
@@ -324,6 +377,35 @@ export function BuilderPage() {
               <StatCard label="Expected Return" value={formatPercent(currentOpt.expected_return)} trend="up" />
               <StatCard label="Volatility" value={formatPercent(currentOpt.volatility)} />
               <StatCard label="Sharpe Ratio" value={formatNumber(currentOpt.sharpe)} trend={currentOpt.sharpe > 0 ? 'up' : 'down'} />
+            </div>
+          )}
+
+          {/* Discrete Allocation */}
+          {discreteAllocation && (
+            <div className="bg-panel rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-muted">Discrete Allocation</h3>
+                <span className="text-xs text-muted">Capital: ${saveCapital.toLocaleString()}</span>
+              </div>
+              <div className="space-y-2">
+                {Object.entries(discreteAllocation.allocation).map(([ticker, data]) => (
+                  <div key={ticker} className="flex items-center justify-between text-sm py-2 border-b border-panel-light">
+                    <div className="flex items-center gap-2 flex-1">
+                      <span className="font-medium">{ticker}</span>
+                      <span className="text-muted text-xs">{displayWeights[ticker] ? `${(displayWeights[ticker] * 100).toFixed(1)}%` : ''}</span>
+                    </div>
+                    <div className="flex items-center gap-4 text-right">
+                      <span className="font-mono text-brand-400">{data.shares} shares</span>
+                      <span className="text-muted text-xs">@ ${data.price.toFixed(2)}</span>
+                      <span className="font-mono w-24">${data.amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-between text-xs text-muted pt-2 border-t border-panel-light">
+                <span>Total invested: ${discreteAllocation.totalInvested.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                <span className="text-bull">Cash leftover: ${discreteAllocation.leftoverCash.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+              </div>
             </div>
           )}
 

@@ -7,6 +7,7 @@ export interface OptimizeRequest {
   portfolio_id?: number;
   method?: string;
   total_portfolio_value?: number;
+  n_points?: number;
 }
 
 export interface TargetRiskRequest {
@@ -46,4 +47,5 @@ export interface FrontierResponse {
   max_sharpe: FrontierPoint;
   min_vol: FrontierPoint;
   asset_points: AssetPoint[];
+  latest_prices?: Record<string, number>;
 }

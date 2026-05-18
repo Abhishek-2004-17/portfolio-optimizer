@@ -1,0 +1,248 @@
+@startuml Portfolio Optimization Platform - Architecture Overview
+
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam classAttributeIconSize 0
+
+title Portfolio Optimization Platform - System Architecture
+
+package "Frontend (React + TypeScript)" {
+    interface OptimizeRequest {
+        + tickers: string[]
+        + start_date: string
+        + end_date: string
+        + risk_free_rate: float
+        + weight_bounds: [float, float]
+        + portfolio_id?: int
+        + total_portfolio_value?: float
+    }
+
+    interface OptimizeResponse {
+        + method: string
+        + weights: Dict[str, float]
+        + expected_return: float
+        + volatility: float
+        + sharpe_ratio: float
+        + discrete_allocation: Dict?
+        + leftover_cash: float?
+    }
+
+    interface FrontierResponse {
+        + points: FrontierPoint[]
+        + max_sharpe: FrontierPoint
+        + min_vol: FrontierPoint
+        + asset_points: AssetPoint[]
+        + latest_prices: Dict?
+    }
+
+    class BuilderPage {
+        + tickers: TickerInput[]
+        + start_date: string
+        + end_date: string
+        + riskTolerance: float
+        + frontier: FrontierResponse | null
+        + onSubmit()
+        + interpolateFrontier()
+        + savePortfolio()
+    }
+
+    class EfficientFrontierChart {
+        + render()
+    }
+
+    class AllocationPieChart {
+        + render()
+    }
+
+    class WeightsBarChart {
+        + render()
+    }
+
+    BuilderPage ..> OptimizeRequest : uses
+    BuilderPage ..> FrontierResponse : uses
+    BuilderPage --> EfficientFrontierChart : renders
+    BuilderPage --> AllocationPieChart : renders
+    BuilderPage --> WeightsBarChart : renders
+}
+
+package "Backend API (FastAPI)" {
+    class OptimizationRouter <<APIRouter>> {
+        + POST /max-sharpe
+        + POST /min-volatility
+        + POST /target-return
+        + POST /target-risk
+        + POST /efficient-frontier
+        + GET /portfolio/{id}/history
+    }
+
+    note right of OptimizationRouter
+        REST API Endpoints
+        - Request validation via Pydantic
+        - Response serialization
+        - Error handling
+    end note
+}
+
+package "Request/Response Schemas (Pydantic)" {
+    class OptimizeRequestSchema {
+        + tickers: list[str]
+        + start_date: str
+        + end_date: str
+        + risk_free_rate: float
+        + weight_bounds: tuple
+        + portfolio_id: int | None
+        + method: str
+    }
+
+    class TargetRiskRequest {
+        + target_volatility: float
+    }
+
+    class TargetReturnRequest {
+        + target_return: float
+    }
+
+    class FrontierRequest {
+        + n_points: int
+    }
+
+    class OptimizeResponseSchema {
+        + method: str
+        + weights: dict
+        + expected_return: float
+        + volatility: float
+        + sharpe_ratio: float
+    }
+
+    class FrontierResponseSchema {
+        + points: list
+        + max_sharpe: FrontierPoint
+        + min_vol: FrontierPoint
+        + asset_points: list
+    }
+}
+
+package "Service Layer" {
+    class OptimizationService {
+        + {static} max_sharpe() : dict
+        + {static} min_volatility() : dict
+        + {static} target_return() : dict
+        + {static} target_risk() : dict
+        + {static} efficient_frontier() : dict
+        - {static} _download_prices() : DataFrame
+        - {static} _compute_mu_sigma() : tuple
+        - {static} _make_ef() : EfficientFrontier
+    }
+
+    note right of OptimizationService
+        Core business logic
+        - Portfolio optimization algorithms
+        - Efficient frontier calculation
+        - Discrete allocation computation
+    end note
+}
+
+package "Repository Layer" {
+    class OptimizationResultRepository {
+        + save_result() : OptimizationResult
+        + get_by_portfolio() : list
+        + get_history() : list
+    }
+
+    class BaseRepository {
+        <<abstract>>
+    }
+}
+
+package "Database Models (SQLAlchemy ORM)" {
+    class OptimizationResult {
+        + id: int <<PK>>
+        + portfolio_id: int <<FK>>
+        + method: str
+        + weights: JSONB
+        + expected_return: float
+        + volatility: float
+        + sharpe_ratio: float
+        + parameters: JSONB
+        + created_at: datetime
+    }
+
+    class Portfolio {
+        + id: int <<PK>>
+        + name: str
+        + description: str?
+        + base_currency: str
+        + initial_capital: float
+        + created_at: datetime
+        + updated_at: datetime
+    }
+
+    class PortfolioAsset {
+        + id: int <<PK>>
+        + portfolio_id: int <<FK>>
+        + ticker: str
+        + weight: float
+        + shares: int?
+    }
+
+    class RiskMetric {
+        + id: int <<PK>>
+        + portfolio_id: int <<FK>>
+        + metric_type: str
+        + value: float
+        + calculated_at: datetime
+    }
+
+    Portfolio "1" -- "*" OptimizationResult : contains >
+    Portfolio "1" -- "*" PortfolioAsset : contains >
+    Portfolio "1" -- "*" RiskMetric : has >
+}
+
+package "External Dependencies" {
+    class yfinance <<external>> {
+        + download() : DataFrame
+    }
+
+    class pypfopt <<external>> {
+        class EfficientFrontier {
+            + max_sharpe()
+            + min_volatility()
+            + efficient_return()
+            + efficient_risk()
+            + clean_weights()
+            + portfolio_performance()
+        }
+
+        class DiscreteAllocation {
+            + lp_portfolio()
+        }
+
+        class CovarianceShrinkage {
+            + ledoit_wolf()
+        }
+
+        class mean_historical_return {
+            + __call__()
+        }
+    }
+}
+
+' Relationships
+Frontend ..> OptimizationRouter : HTTP POST/GET
+OptimizationRouter ..> OptimizeRequestSchema : validates
+OptimizationRouter ..> OptimizationService : calls
+OptimizationRouter ..> OptimizationResultRepository : calls
+
+OptimizationService ..> yfinance : downloads price data
+OptimizationService ..> pypfopt : runs optimization
+OptimizationService --> OptimizationResultRepository : saves results
+
+OptimizationResultRepository ..> OptimizationResult : ORM
+OptimizationResultRepository ..> Portfolio : ORM
+OptimizationResultRepository ..> PortfolioAsset : ORM
+OptimizationResultRepository ..> RiskMetric : ORM
+
+OptimizeResponseSchema ..> OptimizeResponse : maps to
+FrontierResponseSchema ..> FrontierResponse : maps to
+
+@enduml

@@ -1,0 +1,142 @@
+% Portfolio Optimization Platform - System Architecture
+% For inclusion in research journals (IEEE, ACM, Springer formats)
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=0.8cm,
+    layer/.style={rectangle, draw, minimum width=3cm, minimum height=1cm, align=center, font=\small},
+    component/.style={rectangle, draw, rounded corners, minimum width=2.5cm, minimum height=0.7cm, align=center, font=\footnotesize},
+    database/.style={cylinder, draw, shape border rotate=90, aspect=0.25, minimum height=1.2cm, minimum width=1.5cm, align=center, font=\footnotesize},
+    external/.style={rectangle, draw, dashed, rounded corners, minimum width=2cm, minimum height=0.6cm, align=center, font=\footnotesize},
+    arrow/.style={->, >=stealth, thick}
+]
+
+% Frontend Layer
+\node[layer, fill=blue!10] (frontend) {Frontend Layer\\(React/TypeScript)};
+\node[component, below=0.3cm of frontend] (builder) {BuilderPage};
+\node[component, below=0.2cm of builder] (charts) {Charts\\(EfficientFrontier, Pie, Bar)};
+
+% API Layer
+\node[layer, fill=green!10, right=2cm of frontend] (api) {API Layer\\(FastAPI)};
+\node[component, below=0.3cm of api] (router) {OptimizationRouter};
+\node[component, below=0.2cm of router] (schemas) {Pydantic Schemas};
+
+% Service Layer
+\node[layer, fill=yellow!10, right=2cm of api] (service) {Service Layer};
+\node[component, below=0.3cm of service] (optservice) {OptimizationService};
+\node[component, below=0.2cm of optservice] (compute) {$\mu$, $\sigma$ Computation};
+
+% Data Layer
+\node[layer, fill=red!10, below=2cm of service] (data) {Data Layer};
+\node[component, below=0.3cm of data] (repo) {OptimizationRepository};
+\node[database, below=0.3cm of repo] (db) {PostgreSQL};
+
+% External Services
+\node[external, fill=orange!10, right=1cm of optservice] (yf) {yfinance};
+\node[external, fill=orange!10, above=0.2cm of yf] (pypfopt) {PyPortfolioOpt};
+
+% Arrows
+\draw[arrow] (builder) -- (router);
+\draw[arrow] (router) -- (optservice);
+\draw[arrow] (optservice) -- (yf);
+\draw[arrow] (optservice) -- (pypfopt);
+\draw[arrow] (router) -- (repo);
+\draw[arrow] (repo) -- (db);
+
+\end{tikzpicture}
+\caption{System architecture of the Portfolio Optimization Platform showing the layered design with frontend, API, service, and data layers.}
+\label{fig:architecture}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    class/.style={rectangle, draw, minimum width=2.5cm, minimum height=0.6cm, align=center, font=\footnotesize},
+    arrow/.style={->, >=stealth}
+]
+
+% Classes
+\node[class] (request) {OptimizeRequest};
+\node[class, right=1.5cm of request] (response) {OptimizeResponse};
+\node[class, right=1.5cm of response] (frontier) {FrontierResponse};
+
+\node[class, below=1cm of request] (result) {OptimizationResult};
+\node[class, below=1cm of result] (portfolio) {Portfolio};
+\node[class, right=1.5cm of portfolio] (asset) {PortfolioAsset};
+
+% Relationships
+\draw[arrow] (request) -- node[above, font=\tiny] {validates} (response);
+\draw[arrow] (response) -- node[above, font=\tiny] {extends} (frontier);
+\draw[arrow] (result) -- node[left, font=\tiny] {maps to} (response);
+\draw[arrow, dashed] (portfolio) -- node[above, font=\tiny] {1:N} (result);
+\draw[arrow, dashed] (portfolio) -- node[above, font=\tiny] {1:N} (asset);
+
+\end{tikzpicture}
+\caption{Core domain model showing request/response schemas and database entities with their relationships.}
+\label{fig:domain}
+\end{figure}
+
+% Alternative: Sequence diagram for optimization flow
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=1.2cm,
+    entity/.style={rectangle, draw, minimum width=1.5cm, minimum height=0.5cm, align=center, font=\footnotesize},
+    arrow/.style={->, >=stealth}
+]
+
+\node[entity] (user) {User};
+\node[entity, right=1.5cm of user] (ui) {UI};
+\node[entity, right=1.5cm of ui] (api) {API};
+\node[entity, right=1.5cm of api] (svc) {Service};
+\node[entity, right=1.5cm of svc] (yf) {yfinance};
+\node[entity, right=1.5cm of yf] (pypfopt) {PyPfopt};
+\node[entity, right=1.5cm of pypfopt] (db) {DB};
+
+% Sequence lines
+\draw (user) -- (ui);
+\draw (ui) -- (api);
+\draw (api) -- (svc);
+\draw (svc) -- (yf);
+\draw (svc) -- (pypfopt);
+\draw (api) -- (db);
+
+% Messages
+\draw[arrow] (user) -- node[above, font=\tiny] {1. Input} (ui);
+\draw[arrow] (ui) -- node[above, font=\tiny] {2. POST} (api);
+\draw[arrow] (api) -- node[above, font=\tiny] {3. Validate} (api);
+\draw[arrow] (api) -- node[above, font=\tiny] {4. Call} (svc);
+\draw[arrow] (svc) -- node[above, font=\tiny] {5. Fetch} (yf);
+\draw[arrow] (yf) -- node[above, font=\tiny] {6. Prices} (svc);
+\draw[arrow] (svc) -- node[above, font=\tiny] {7. Optimize} (pypfopt);
+\draw[arrow] (pypfopt) -- node[above, font=\tiny] {8. Weights} (svc);
+\draw[arrow] (api) -- node[above, font=\tiny] {9. Save} (db);
+
+\end{tikzpicture}
+\caption{Sequence diagram showing the flow of a portfolio optimization request from user input to result storage.}
+\label{fig:sequence}
+\end{figure}
+
+% Table summarizing the architecture
+\begin{table}[htbp]
+\centering
+\caption{Architectural layers and their responsibilities}
+\label{tab:architecture}
+\begin{tabular}{lll}
+\hline
+\textbf{Layer} & \textbf{Responsibility} & \textbf{Technology} \\
+\hline
+Presentation & UI rendering, form validation & React, TypeScript, Zod \\
+API Gateway & HTTP routing, request validation & FastAPI, Pydantic \\
+Domain Logic & Portfolio optimization algorithms & NumPy, Pandas, PyPortfolioOpt \\
+Data Access & Database persistence & SQLAlchemy ORM \\
+Database & Persistent storage & PostgreSQL \\
+External Services & Market data, optimization & yfinance, PyPortfolioOpt \\
+\hline
+\end{tabular}
+\end{table}
+
+% Use this in your paper:
+% \input{architecture-diagrams.tex}
+% Then reference: See Figure \ref{fig:architecture} for the system architecture.
