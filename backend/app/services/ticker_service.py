@@ -5,8 +5,6 @@ from functools import lru_cache
 import pandas as pd
 import yfinance as yf
 
-from app.repositories.ticker_repo import TickerRepository
-
 logger = logging.getLogger(__name__)
 
 
